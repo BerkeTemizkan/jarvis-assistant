@@ -2,7 +2,7 @@
 # requires-python = "==3.12.*"
 # dependencies = [
 #   "google-genai",
-#   "pyttsx3",
+#   "gtts",
 #   "speechrecognition",
 #   "python-dotenv",
 #   "pyaudio",
@@ -38,9 +38,11 @@ except ImportError:
     sr = None
 
 try:
-    import pyttsx3
+    from gtts import gTTS
+    import ctypes
+    import tempfile
 except ImportError:
-    pyttsx3 = None
+    gTTS = None
 
 try:
     import keyboard
@@ -118,18 +120,7 @@ class JarvisAssistant:
         self.speak(self.get_time_based_greeting())
 
     def init_tts(self):
-        if pyttsx3:
-            try:
-                self.tts_engine = pyttsx3.init()
-                # Try to set Turkish voice if available
-                voices = self.tts_engine.getProperty('voices')
-                for voice in voices:
-                    if "tr" in voice.id.lower() or "turkish" in voice.name.lower():
-                        self.tts_engine.setProperty('voice', voice.id)
-                        break
-                self.tts_engine.setProperty('rate', 165)  # Slightly faster, elegant speaking rate
-            except Exception as e:
-                print(f"TTS Engine initialization error: {e}")
+        print("TTS Engine initialized with gTTS (Google Cloud TTS)")
 
     def init_gemini(self):
         api_key = os.getenv("GEMINI_API_KEY")
@@ -462,10 +453,22 @@ class JarvisAssistant:
         while self.running:
             try:
                 text = self.speech_queue.get(timeout=1.0)
-                if self.tts_engine and text:
+                if gTTS and text:
                     print(f"Jarvis speaking: {text}")
-                    self.tts_engine.say(text)
-                    self.tts_engine.runAndWait()
+                    tts = gTTS(text=text, lang='tr')
+                    temp_dir = tempfile.gettempdir()
+                    temp_path = os.path.join(temp_dir, f"jarvis_{int(time.time() * 1000)}.mp3")
+                    tts.save(temp_path)
+                    
+                    # Play using Windows MCI
+                    ctypes.windll.winmm.mciSendStringW(f"open \"{temp_path}\" type mpegvideo alias mp3", None, 0, 0)
+                    ctypes.windll.winmm.mciSendStringW("play mp3 wait", None, 0, 0)
+                    ctypes.windll.winmm.mciSendStringW("close mp3", None, 0, 0)
+                    
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
                 self.speech_queue.task_done()
             except queue.Empty:
                 continue
