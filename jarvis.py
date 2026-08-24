@@ -236,17 +236,16 @@ class JarvisAssistant:
     def init_hotkey(self):
         if keyboard:
             try:
-                keyboard.add_hotkey(HOTKEY, self.wake_up)
+                keyboard.add_hotkey(HOTKEY, self.toggle_jarvis)
             except Exception as e:
                 print(f"Hotkey binding error: {e}")
 
-    def wake_up(self):
+    def toggle_jarvis(self):
         if self.state == "STANDBY":
             self.speak("Buyrun efendim, dinliyorum.")
             self.set_state("ACTIVE")
         else:
-            self.speak("Zaten aktifim efendim.")
-            self.last_activity_time = time.time()
+            self.sleep_mode()
 
     def sleep_mode(self, reason=None):
         if self.state != "STANDBY":
@@ -257,6 +256,35 @@ class JarvisAssistant:
             self.set_state("STANDBY")
             self.active_menu_options = None
 
+    def get_physical_microphone_index(self):
+        if not sr:
+            return None
+        try:
+            names = sr.Microphone.list_microphone_names()
+            # Preference 1: Contains 'realtek' and not output/virtual
+            for idx, name in enumerate(names):
+                name_lower = name.lower()
+                if "realtek" in name_lower and ("input" in name_lower or "mikrofon" in name_lower or "microphone" in name_lower) and "output" not in name_lower:
+                    return idx
+            # Preference 2: Contains 'mikrofon' or 'microphone' and not virtual
+            for idx, name in enumerate(names):
+                name_lower = name.lower()
+                if ("mikrofon" in name_lower or "microphone" in name_lower) and not any(v in name_lower for v in ["thx", "stereo", "mix", "karışım"]):
+                    return idx
+            # Preference 3: Contains 'realtek' (any)
+            for idx, name in enumerate(names):
+                name_lower = name.lower()
+                if "realtek" in name_lower:
+                    return idx
+            # Preference 4: First input containing 'mikrofon' or 'microphone'
+            for idx, name in enumerate(names):
+                name_lower = name.lower()
+                if "mikrofon" in name_lower or "microphone" in name_lower:
+                    return idx
+        except Exception as e:
+            print(f"Error listing microphones: {e}")
+        return None
+
     def init_stt_listener(self):
         if sr:
             # We run the listener loop in a thread to keep GUI responsive
@@ -266,7 +294,19 @@ class JarvisAssistant:
     def _stt_listener_worker(self):
         r = sr.Recognizer()
         # Adjust dynamics to background noise
-        mic = sr.Microphone()
+        mic_idx = self.get_physical_microphone_index()
+        if mic_idx is not None:
+            try:
+                mic_name = sr.Microphone.list_microphone_names()[mic_idx]
+                print(f"Auto-selected microphone index {mic_idx}: {mic_name}")
+                mic = sr.Microphone(device_index=mic_idx)
+            except Exception as e:
+                print(f"Failed to bind to mic index {mic_idx}: {e}. Falling back to default.")
+                mic = sr.Microphone()
+        else:
+            print("No matching physical microphone found. Using default system microphone.")
+            mic = sr.Microphone()
+            
         with mic as source:
             r.adjust_for_ambient_noise(source, duration=1.0)
             
@@ -275,8 +315,6 @@ class JarvisAssistant:
             try:
                 with mic as source:
                     # Non-blocking listen using timeout/phrase_time_limit
-                    # If we are in STANDBY, we just check for wake word
-                    # If we are ACTIVE, we listen for commands
                     audio = r.listen(source, timeout=3.0, phrase_time_limit=8.0)
                 
                 # Transcribe speech
