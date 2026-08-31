@@ -15,6 +15,7 @@
 import os
 import sys
 import time
+import math
 import queue
 import threading
 import tkinter as tk
@@ -81,6 +82,7 @@ Soruları Türkçe cevapla.
 class JarvisAssistant:
     def __init__(self):
         self.state = "ACTIVE"  # Start in ACTIVE mode for immediate testing
+        self.anim_step = 0
         self.speech_queue = queue.Queue()
         self.command_queue = queue.Queue()
         self.active_menu_options = None  # To track numbered options
@@ -184,7 +186,8 @@ class JarvisAssistant:
                 print(f"Logo processing error: {e}")
                 
         # Draw status rings and logo
-        self.ring = self.canvas.create_oval(5, 5, 75, 75, outline="#00e5ff", width=3)
+        self.ring_outer = self.canvas.create_oval(5, 5, 75, 75, outline="#00e5ff", width=2)
+        self.ring_inner = self.canvas.create_oval(12, 12, 68, 68, outline="#00e5ff", width=1.5)
         if self.logo_tk:
             self.canvas.create_image(40, 40, image=self.logo_tk)
         else:
@@ -195,7 +198,10 @@ class JarvisAssistant:
         self.canvas.bind("<ButtonPress-1>", self.start_move)
         self.canvas.bind("<B1-Motion>", self.do_move)
         # Double click to manual trigger / wake up
-        self.canvas.bind("<Double-Button-1>", lambda e: self.wake_up())
+        self.canvas.bind("<Double-Button-1>", lambda e: self.toggle_jarvis())
+        
+        # Start logo animation loop
+        self.animate_logo()
 
     def start_move(self, event):
         self.x = event.x
@@ -209,13 +215,84 @@ class JarvisAssistant:
         self.root.geometry(f"+{x}+{y}")
 
     def update_status_indicator(self):
+        # Dynamic updates handled by animate_logo loop
+        pass
+
+    def animate_logo(self):
+        if not self.running:
+            return
+            
+        self.anim_step += 1
+        t = time.time()
+        
+        # Base coordinates for 80x80 widget (center is 40, 40)
+        center_x, center_y = 40, 40
+        
+        # Set animation parameters based on state
         if self.state == "STANDBY":
-            self.canvas.itemconfig(self.ring, outline="#00e5ff")  # Cyan / Blue
+            # Calm breathing blue
+            color = "#00e5ff"
+            freq = 2.0
+            amp = 1.5
+            dash = None
         elif self.state == "ACTIVE":
-            self.canvas.itemconfig(self.ring, outline="#00e676")  # Green
+            # Active breathing green
+            color = "#00e676"
+            freq = 4.0
+            amp = 3.0
+            dash = None
         elif self.state == "THINKING":
-            self.canvas.itemconfig(self.ring, outline="#ffea00")  # Yellow / Gold
-        self.root.update_idletasks()
+            # Spinning gold dashed ring
+            color = "#ffea00"
+            freq = 8.0
+            amp = 0.5
+            offset = self.anim_step % 8
+            # Simple dash pattern
+            dash = (4, 4)
+        elif self.state == "SPEAKING":
+            # Rapid voice pulsing (Neon Cyan/Blue representing speech energy)
+            color = "#00e5ff"
+            freq = 15.0
+            amp = 8.0
+            dash = None
+        else:
+            color = "#00e5ff"
+            freq = 2.0
+            amp = 1.5
+            dash = None
+            
+        # Calculate dynamic radius using sine-wave pulse
+        pulse = math.sin(t * freq) * amp
+        
+        # Outer Ring coordinates (Base radius 34)
+        r_outer = 34 + pulse
+        x0_out, y0_out = center_x - r_outer, center_y - r_outer
+        x1_out, y1_out = center_x + r_outer, center_y + r_outer
+        
+        # Inner Ring coordinates (Base radius 27, opposite phase pulse)
+        r_inner = 27 - (pulse * 0.4)
+        x0_in, y0_in = center_x - r_inner, center_y - r_inner
+        x1_in, y1_in = center_x + r_inner, center_y + r_inner
+        
+        # Update canvas elements
+        try:
+            self.canvas.itemconfig(self.ring_outer, outline=color)
+            self.canvas.coords(self.ring_outer, x0_out, y0_out, x1_out, y1_out)
+            
+            self.canvas.itemconfig(self.ring_inner, outline=color)
+            self.canvas.coords(self.ring_inner, x0_in, y0_in, x1_in, y1_in)
+            
+            # Apply dash pattern for thinking/loading state
+            if dash:
+                self.canvas.itemconfig(self.ring_outer, dash=dash)
+            else:
+                self.canvas.itemconfig(self.ring_outer, dash=())
+        except Exception:
+            # Handle GUI updates if window closing
+            pass
+            
+        # Loop animation every 40ms (~25 FPS for smooth transition)
+        self.root.after(40, self.animate_logo)
 
     def set_state(self, new_state):
         self.state = new_state
@@ -498,10 +575,12 @@ class JarvisAssistant:
                     temp_path = os.path.join(temp_dir, f"jarvis_{int(time.time() * 1000)}.mp3")
                     tts.save(temp_path)
                     
-                    # Play using Windows MCI
+                    # Play using Windows MCI with speaking animation active
+                    self.set_state("SPEAKING")
                     ctypes.windll.winmm.mciSendStringW(f"open \"{temp_path}\" type mpegvideo alias mp3", None, 0, 0)
                     ctypes.windll.winmm.mciSendStringW("play mp3 wait", None, 0, 0)
                     ctypes.windll.winmm.mciSendStringW("close mp3", None, 0, 0)
+                    self.set_state("ACTIVE")
                     
                     try:
                         os.remove(temp_path)
