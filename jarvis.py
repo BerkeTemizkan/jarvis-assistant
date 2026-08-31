@@ -63,7 +63,7 @@ load_dotenv()
 # Configuration
 WAKE_WORD = "jarvis"
 HOTKEY = "ctrl+j"
-AUTO_SLEEP_TIMEOUT = 1200  # 20 minutes in seconds
+AUTO_SLEEP_TIMEOUT = 600  # 10 minutes in seconds
 PROJECTS_DIR = r"C:\Users\21COMP1067\.gemini\antigravity\scratch"
 LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_logo.jpg")
 
@@ -396,7 +396,7 @@ class JarvisAssistant:
     def sleep_mode(self, reason=None):
         if self.state != "STANDBY":
             if reason == "timeout":
-                self.speak("Yirmi dakikadır bir istek gelmedi efendim. Güç tasarrufu için bekleme moduna geçiyorum.")
+                self.speak("On dakikadır bir istek gelmedi efendim. Güç tasarrufu için bekleme moduna geçiyorum.")
             else:
                 self.speak("Sistemler uyku moduna alınıyor efendim. İyi günler.")
             self.set_state("STANDBY")
