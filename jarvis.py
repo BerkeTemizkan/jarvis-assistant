@@ -168,9 +168,6 @@ class JarvisAssistant:
         
         # Start periodic checks (Auto-sleep and system updates)
         self.root.after(1000, self.periodic_check)
-        
-        # Initial greeting
-        self.speak(self.get_time_based_greeting())
 
     def init_tts(self):
         print("TTS Engine initialized with gTTS (Google Cloud TTS)")
@@ -380,16 +377,7 @@ class JarvisAssistant:
         self.root.after(0, self.update_status_indicator)
         self.last_activity_time = time.time()
 
-    def get_time_based_greeting(self):
-        hour = datetime.now().hour
-        if 5 <= hour < 12:
-            return "Günaydın efendim. Güç reaktörleri stabil, tüm sistemler çevrimiçi."
-        elif 12 <= hour < 17:
-            return "Tünaydın efendim. Sizin için hazır durumdayım."
-        elif 17 <= hour < 22:
-            return "İyi akşamlar efendim. Bugünkü projelerimize göz atalım mı?"
-        else:
-            return "İyi geceler efendim. Yine geç saatlere kadar çalışıyoruz sanırım."
+
 
     def init_hotkey(self):
         if keyboard:
