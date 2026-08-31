@@ -149,6 +149,7 @@ class JarvisAssistant:
         
         # State variables
         self.running = True
+        self.speaking = False
         
         # Start background threads
         self.tts_thread = threading.Thread(target=self._tts_worker, daemon=True)
@@ -439,6 +440,11 @@ class JarvisAssistant:
 
     def _stt_listener_worker(self):
         r = sr.Recognizer()
+        r.energy_threshold = 400  # Default is 300; 400 requires slightly louder/closer speech to ignore background music/TV
+        r.dynamic_energy_threshold = True
+        r.dynamic_energy_adjustment_damping = 0.15
+        r.dynamic_energy_ratio = 1.5
+        
         # Adjust dynamics to background noise
         mic_idx = self.get_physical_microphone_index()
         if mic_idx is not None:
@@ -459,10 +465,19 @@ class JarvisAssistant:
         print("Microphone listening thread started...")
         while self.running:
             try:
+                # 1. Skip if Jarvis is currently speaking
+                if self.speaking or self.state == "SPEAKING":
+                    time.sleep(0.2)
+                    continue
+                    
                 with mic as source:
                     # Non-blocking listen using timeout/phrase_time_limit
                     audio = r.listen(source, timeout=3.0, phrase_time_limit=8.0)
                 
+                # 2. Skip transcription if Jarvis started speaking during recording
+                if self.speaking or self.state == "SPEAKING":
+                    continue
+                    
                 # Transcribe speech
                 text = r.recognize_google(audio, language="tr-TR").lower().strip()
                 print(f"Parsed voice: {text}")
@@ -518,6 +533,11 @@ class JarvisAssistant:
             return response.text
         except Exception as e:
             print(f"Gemini generation error: {e}")
+            err_str = str(e).upper()
+            if "RESOURCE_EXHAUSTED" in err_str or "429" in err_str or "QUOTA" in err_str:
+                # Safely put the assistant to sleep on the main thread to break the loop
+                self.root.after(100, lambda: self.sleep_mode())
+                return "API kota sınırı aşıldı efendim. Muhtemelen arka plandaki müzik veya video nedeniyle kota doldu. Güvenlik için bekleme moduna geçiyorum."
             return "Yaratıcı zeka modülüyle iletişim kurulurken bir aksaklık yaşandı efendim."
 
     def get_system_telemetry(self):
@@ -569,11 +589,15 @@ class JarvisAssistant:
                     tts.save(temp_path)
                     
                     # Play using Windows MCI with speaking animation active
+                    self.speaking = True
                     self.set_state("SPEAKING")
                     ctypes.windll.winmm.mciSendStringW(f"open \"{temp_path}\" type mpegvideo alias mp3", None, 0, 0)
                     ctypes.windll.winmm.mciSendStringW("play mp3 wait", None, 0, 0)
                     ctypes.windll.winmm.mciSendStringW("close mp3", None, 0, 0)
                     self.set_state("ACTIVE")
+                    # Delay to let physical speaker echoes fade out before microphone listens again
+                    time.sleep(0.6)
+                    self.speaking = False
                     
                     try:
                         os.remove(temp_path)
