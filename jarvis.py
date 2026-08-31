@@ -493,8 +493,9 @@ class JarvisAssistant:
                 self.toggle_jarvis()
             return
             
-        # State: ACTIVE - check for sleep commands
-        if any(w in text for w in ["dur", "kapan", "uykuya geç", "görüşürüz"]):
+        # State: ACTIVE - check for sleep commands (using exact word match to avoid substring false positives like "durumdayım")
+        words = text.split()
+        if "dur" in words or "sus" in words or "kapan" in words or "görüşürüz" in words or "uykuya geç" in text or "uyku modu" in text:
             self.sleep_mode()
             return
             
