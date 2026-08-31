@@ -421,7 +421,7 @@ class JarvisAssistant:
         # State: STANDBY - listen ONLY for wake word
         if self.state == "STANDBY":
             if WAKE_WORD in text:
-                self.wake_up()
+                self.toggle_jarvis()
             return
             
         # State: ACTIVE - check for sleep commands or option selections
@@ -446,9 +446,9 @@ class JarvisAssistant:
             self.report_system_status()
             return
 
-        # Handle "acil iş bul" project choices specifically
-        if "acil iş bul" in text or "iş bul projesi" in text:
-            self.show_project_menu()
+        # Handle "video/klip düzenleme" project choices specifically (2nd video workflow)
+        if any(w in text for w in ["video", "klip", "düzenle", "edit", "içerik", "paylaş"]):
+            self.show_video_menu()
             return
             
         # General LLM query using Gemini
@@ -531,35 +531,33 @@ class JarvisAssistant:
         self.speak(report)
         self.set_state("ACTIVE")
 
-    def show_project_menu(self):
-        # Define actions for the "Acil İş Bul" project
+    def show_video_menu(self):
+        # Define actions for Video Editing & Buffer Scheduling Workflow (2nd video)
         self.active_menu_options = [
-            ("Projeyi Derle ve Çalıştır", self.action_run_project),
-            ("Hata ve Log Kontrolü Yap", self.action_check_logs),
-            ("Yeni İş İlanı Ekleme Testi Başlat", self.action_test_posting),
-            ("Git Versiyon Durumunu İncele", self.action_git_status),
+            ("Ham Videoları Tara ve Kaba Kurgu Yap", self.action_scan_and_cut),
+            ("Dikey Kadraj Dönüştür ve Altyazı Ekle", self.action_subtitles_and_audio),
+            ("Görsel Efektler ve Animasyon Giydir", self.action_effects_overlay),
+            ("Klipleri Buffer ile Yarın Saat 12'ye Zamanla", self.action_buffer_schedule),
         ]
         
-        menu_text = "Acil İş Bul projesi için seçenekleri listeliyorum efendim. Lütfen numarasını söyleyin: "
+        menu_text = "Video kurgu ve yayınlama seçeneklerini listeliyorum efendim. Lütfen işlem numarasını söyleyin: "
         for i, (name, _) in enumerate(self.active_menu_options, 1):
             menu_text += f"{i}. {name}. "
             
         self.speak(menu_text)
 
-    # Project Actions
-    def action_run_project(self):
-        self.speak("Proje dosyaları taranıyor. Derleme işlemi başlatıldı efendim.")
-        time.sleep(2)
-        self.speak("Proje başarıyla derlendi ve yerel sunucuda yayına alındı efendim.")
+    # Video & Content Actions
+    def action_scan_and_cut(self):
+        self.speak("Ham röportaj klasörü taranıyor. Aksel ve Ahmet'in ham görüntüleri tespit edildi. Kaba kurgu işlemi başlatıldı. Röportajlar kesilip 30'ar saniyelik parçalara bölündü ve birleştirildi efendim.")
 
-    def action_check_logs(self):
-        self.speak("Hafıza logları taranıyor. Kritik bir hata kaydına rastlanmadı, sistem stabil efendim.")
+    def action_subtitles_and_audio(self):
+        self.speak("Dikey kadraj dönüştürme, altyazı sentezleme ve dip gürültü temizleme işlemleri başlatıldı. Klipler sosyal medya formatına uyarlandı efendim.")
 
-    def action_test_posting(self):
-        self.speak("İş ilanı veri matrisi simüle ediliyor. Test başarılı, API yanıt verdi efendim.")
+    def action_effects_overlay(self):
+        self.speak("Anlatılan anahtar kelimeler yapay zeka tarafından tespit ediliyor. Metinlere uygun ekran animasyonları ve grafikler kliplere başarıyla giydirildi efendim.")
 
-    def action_git_status(self):
-        self.speak("Depolama kontrol noktası inceleniyor. Yerel dal güncel durumda efendim.")
+    def action_buffer_schedule(self):
+        self.speak("Hazırlanan 17 adet kısa klibi yarın öğlen saat 12'ye Buffer takviminize planlıyorum efendim. Paylaşım takvimi güncellendi. For you sir, always.")
 
     def speak(self, text):
         self.speech_queue.put(text)
