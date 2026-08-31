@@ -106,16 +106,6 @@ class JarvisAssistant:
         
         self.command_thread = threading.Thread(target=self._command_worker, daemon=True)
         self.command_thread.start()
-        # Generate 3D sphere particles
-        self.particles = []
-        self.particle_ids = []
-        self.angle_x = 0.0
-        self.angle_y = 0.0
-        num_particles = 120 # 120 particles provides high density and excellent 3D look
-        for _ in range(num_particles):
-            theta = random.uniform(0, 2 * math.pi)
-            phi = math.acos(random.uniform(-1, 1))
-            self.particles.append((theta, phi))
 
         # Build GUI
         self.init_gui()
@@ -175,13 +165,25 @@ class JarvisAssistant:
         self.canvas = tk.Canvas(self.root, width=self.widget_size, height=self.widget_size, bg='#121212', highlightthickness=0)
         self.canvas.pack()
         
-        # Draw boundary circle (Faint container ring)
-        self.ring_boundary = self.canvas.create_oval(4, 4, 76, 76, outline="#00e5ff", width=1)
+        # Load Jarvis Logo
+        self.original_img = None
+        self.logo_tk = None
+        if Image and os.path.exists(LOGO_PATH):
+            try:
+                # Keep original image in memory for dynamic resizing
+                self.original_img = Image.open(LOGO_PATH)
+            except Exception as e:
+                print(f"Logo processing error: {e}")
+                
+        # Draw status rings and logo
+        self.ring_outer = self.canvas.create_oval(5, 5, 75, 75, outline="#00e5ff", width=2)
+        self.ring_inner = self.canvas.create_oval(12, 12, 68, 68, outline="#00e5ff", width=1.5)
         
-        # Create particle ovals for the 3D sphere
-        for _ in range(len(self.particles)):
-            p_id = self.canvas.create_oval(0, 0, 0, 0, fill="#00e5ff", outline="")
-            self.particle_ids.append(p_id)
+        self.image_id = None
+        self.text_id = None
+        
+        # Initial render of the logo image
+        self.update_image_size(54)
             
         # Drag and move functionality
         self.canvas.bind("<ButtonPress-1>", self.start_move)
@@ -207,6 +209,34 @@ class JarvisAssistant:
         # Dynamic updates handled by animate_logo loop
         pass
 
+    def update_image_size(self, size):
+        if not self.original_img:
+            if not self.text_id:
+                self.text_id = self.canvas.create_text(40, 40, text="J.A.R.V.I.S.", fill="#00e5ff", font=("Consolas", 9, "bold"))
+            return
+            
+        try:
+            # Resize using fast BOX filter to avoid CPU load
+            img = self.original_img.resize((size, size), Image.Resampling.BOX)
+            
+            # Make circular mask
+            mask = Image.new('L', (size, size), 0)
+            from PIL import ImageDraw
+            draw = ImageDraw.Draw(mask)
+            draw.ellipse((0, 0, size, size), fill=255)
+            
+            circular_img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+            circular_img.paste(img, (0, 0), mask=mask)
+            
+            self.logo_tk = ImageTk.PhotoImage(circular_img)
+            
+            if self.image_id is None:
+                self.image_id = self.canvas.create_image(40, 40, image=self.logo_tk)
+            else:
+                self.canvas.itemconfig(self.image_id, image=self.logo_tk)
+        except Exception as e:
+            print(f"Error resizing logo image: {e}")
+
     def animate_logo(self):
         if not self.running:
             return
@@ -214,100 +244,69 @@ class JarvisAssistant:
         self.anim_step += 1
         t = time.time()
         
-        # State-based parameters (Branding: Standby=Blue, Active=Green, Thinking=Gold, Speaking=Cyan Pulsing)
+        # State-based parameters
         if self.state == "STANDBY":
-            color_base = (0, 229, 255) # Cyan #00e5ff
-            color_hex = "#00e5ff"
-            rot_speed_x = 0.015
-            rot_speed_y = 0.025
-            amp = 1.0
+            color = "#00e5ff" # Blue/Cyan
             freq = 2.0
+            amp = 1.5
+            dash = None
         elif self.state == "ACTIVE":
-            color_base = (0, 230, 118) # Green #00e676
-            color_hex = "#00e676"
-            rot_speed_x = 0.03
-            rot_speed_y = 0.05
-            amp = 2.0
+            color = "#00e676" # Green
             freq = 4.0
+            amp = 3.0
+            dash = None
         elif self.state == "THINKING":
-            color_base = (255, 234, 0) # Gold #ffea00
-            color_hex = "#ffea00"
-            rot_speed_x = 0.08
-            rot_speed_y = 0.12
-            amp = 0.5
+            color = "#ffea00" # Gold
             freq = 8.0
+            amp = 0.5
+            dash = (4, 4)
         elif self.state == "SPEAKING":
-            color_base = (0, 229, 255) # Cyan #00e5ff (Classic Jarvis color)
-            color_hex = "#00e5ff"
-            rot_speed_x = 0.04
-            rot_speed_y = 0.08
-            amp = 8.0 # Large expansion/contraction matching voice amplitude
-            freq = 16.0
+            color = "#00e5ff" # Cyan
+            freq = 15.0
+            amp = 10.0 # Rapid large pulse representing voice volume/vibration
+            dash = None
         else:
-            color_base = (0, 229, 255)
-            color_hex = "#00e5ff"
-            rot_speed_x = 0.015
-            rot_speed_y = 0.025
-            amp = 1.0
+            color = "#00e5ff"
             freq = 2.0
-
-        # Update rotation angles
-        self.angle_x = (self.angle_x + rot_speed_x) % (2 * math.pi)
-        self.angle_y = (self.angle_y + rot_speed_y) % (2 * math.pi)
-        
-        # Pulse radius
+            amp = 1.5
+            dash = None
+            
+        # Calculate dynamic radius offset using sine-wave pulse
         pulse = math.sin(t * freq) * amp
-        R = 25 + pulse # Base radius of 25 pixels (fits nicely in 80px container)
         
+        # Calculate dynamic outer/inner ring coordinates
         center_x, center_y = 40, 40
-        d = 100 # Camera distance for perspective projection
         
-        # Update decorative boundary container ring
+        r_outer = 34 + pulse
+        x0_out, y0_out = center_x - r_outer, center_y - r_outer
+        x1_out, y1_out = center_x + r_outer, center_y + r_outer
+        
+        r_inner = 27 - (pulse * 0.4)
+        x0_in, y0_in = center_x - r_inner, center_y - r_inner
+        x1_in, y1_in = center_x + r_inner, center_y + r_inner
+        
+        # Update rings outline color and coords on Canvas
         try:
-            self.canvas.itemconfig(self.ring_boundary, outline=color_hex)
+            self.canvas.itemconfig(self.ring_outer, outline=color)
+            self.canvas.coords(self.ring_outer, x0_out, y0_out, x1_out, y1_out)
+            
+            self.canvas.itemconfig(self.ring_inner, outline=color)
+            self.canvas.coords(self.ring_inner, x0_in, y0_in, x1_in, y1_in)
+            
+            # Apply dash pattern for thinking/loading state
+            if dash:
+                self.canvas.itemconfig(self.ring_outer, dash=dash)
+            else:
+                self.canvas.itemconfig(self.ring_outer, dash=())
+                
+            # Resize and update the central logo image dynamically (very fast, 0.1ms)
+            new_size = int(54 + pulse * 0.8)
+            new_size = max(10, new_size)
+            self.update_image_size(new_size)
         except Exception:
             pass
-
-        # Rotate and project each 3D particle
-        for i, (theta, phi) in enumerate(self.particles):
-            # 3D Spherical to Cartesian coordinates
-            x = R * math.sin(phi) * math.cos(theta)
-            y = R * math.sin(phi) * math.sin(theta)
-            z = R * math.cos(phi)
             
-            # Rotate around Y-axis (Yaw)
-            x1 = x * math.cos(self.angle_y) - z * math.sin(self.angle_y)
-            z1 = x * math.sin(self.angle_y) + z * math.cos(self.angle_y)
-            
-            # Rotate around X-axis (Pitch)
-            y2 = y * math.cos(self.angle_x) - z1 * math.sin(self.angle_x)
-            z2 = y * math.sin(self.angle_x) + z1 * math.cos(self.angle_x)
-            
-            # Perspective projection formula
-            scale = d / (d + z2)
-            x_proj = center_x + x1 * scale
-            y_proj = center_y + y2 * scale
-            
-            # Depth Cueing: points closer to screen are larger and brighter
-            norm_z = (z2 + R) / (2 * R) if R > 0 else 0.5
-            norm_z = max(0.1, min(1.0, norm_z))
-            
-            # Size ranges from 0.6px to 2.2px
-            r_size = 0.6 + norm_z * 1.6
-            
-            # Shading (RGB interpolation)
-            r_c = int(color_base[0] * (0.2 + 0.8 * norm_z))
-            g_c = int(color_base[1] * (0.2 + 0.8 * norm_z))
-            b_c = int(color_base[2] * (0.2 + 0.8 * norm_z))
-            fill_color = f"#{r_c:02x}{g_c:02x}{b_c:02x}"
-            
-            try:
-                self.canvas.coords(self.particle_ids[i], x_proj - r_size, y_proj - r_size, x_proj + r_size, y_proj + r_size)
-                self.canvas.itemconfig(self.particle_ids[i], fill=fill_color)
-            except Exception:
-                pass
-                
-        # Loop animation every 40ms (~25 FPS for smooth cinematic movement)
+        # Loop animation every 40ms (~25 FPS for smooth transition)
         self.root.after(40, self.animate_logo)
 
     def set_state(self, new_state):
