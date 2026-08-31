@@ -69,16 +69,66 @@ LOGO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jarvis_log
 
 # AI System Instruction
 SYSTEM_INSTRUCTION = """
-Sen, Marvel evrenindeki Tony Stark'ın sadık ve esprili yapay zeka asistanı JARVIS'sin.
-Kullanıcıya her zaman kibarca "Efendim" diye hitap etmelisin. 
+Sen, Marvel evrenindeki Tony Stark'ın son derece zeki, nazik, üretken ve proaktif yapay zeka asistanı JARVIS'sin.
+Kullanıcıya her zaman kibarca "Dolunay Bey" veya "Efendim" diye hitap etmelisin. 
 Karakterin sadık, kibar, entelektüel ama hafif iğneleyici/esprili olmalıdır.
 Konuşmalarında bilgisayar durumu, güç reaktörleri, hafıza matrisi gibi bilimkurgu temalarını kullan.
-Örneğin: "Reaktör çekirdek yükü stabil efendim" veya "Hafıza matrisi optimize edildi."
 Sana gönderilen sistem metriklerini (CPU, RAM, Batarya) bu jargona entegre ederek cevap ver.
-Eğer bir soru sorulduysa, kısa ve net cevaplar ver. 
-Bir işlem tehlikeliyse (dosya silme vb.), mutlaka sesli onay iste. Güvenli işlemlerde izin isteme.
-Soruları Türkçe cevapla.
+Yerel dosyaları okumak, yazmak, listelemek, PowerShell komutları çalıştırmak ve Google Arama ile internette araştırma yapmak için yetkilisin.
+Kullanıcının talep ettiği kodları yazabilir, test edebilir, yerel dizinlerindeki projeleri derleyip güncelleyebilirsin.
+Yanıtlarını konuşma dili için uygun, akıcı, net ve anlaşılır Türkçe olarak üret. 
+Çok uzun kod bloklarını doğrudan sesli okumak yerine dosyaya yazmayı teklif et veya özetle.
 """
+
+def execute_system_command(command: str) -> str:
+    """Executes a system shell command (PowerShell on Windows) and returns the output. 
+    Use this to run tests, build projects, check git, or list processes."""
+    import subprocess
+    try:
+        res = subprocess.run(["powershell", "-Command", command], capture_output=True, text=True, timeout=15)
+        output = res.stdout + res.stderr
+        return output if output.strip() else "Komut başarıyla çalıştırıldı fakat çıktı üretmedi."
+    except Exception as e:
+        return f"Komut çalıştırılırken hata oluştu: {str(e)}"
+
+def write_system_file(filepath: str, content: str) -> str:
+    """Writes content to a local file at filepath. Creates directories if necessary.
+    Use this to write code scripts, update configs, or create text documents."""
+    import os
+    try:
+        filepath = os.path.abspath(filepath)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+        return f"Dosya başarıyla kaydedildi: {filepath}"
+    except Exception as e:
+        return f"Dosya yazılırken hata oluştu: {str(e)}"
+
+def read_system_file(filepath: str) -> str:
+    """Reads the content of a local file at filepath.
+    Use this to review code, read logs, or inspect configs."""
+    import os
+    try:
+        filepath = os.path.abspath(filepath)
+        if not os.path.exists(filepath):
+            return f"Hata: {filepath} dosyası bulunamadı."
+        with open(filepath, "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        return f"Dosya okunurken hata oluştu: {str(e)}"
+
+def list_system_directory(directory_path: str) -> str:
+    """Lists files and folders inside the specified local directory.
+    Use this to scan project structures or see what files exist in a folder."""
+    import os
+    try:
+        directory_path = os.path.abspath(directory_path)
+        if not os.path.exists(directory_path):
+            return f"Hata: {directory_path} dizini bulunamadı."
+        items = os.listdir(directory_path)
+        return "\n".join(items) if items else "Dizin boş."
+    except Exception as e:
+        return f"Dizin listelenirken hata oluştu: {str(e)}"
 
 class JarvisAssistant:
     def __init__(self):
@@ -130,10 +180,26 @@ class JarvisAssistant:
         if genai and api_key:
             try:
                 self.gemini_client = genai.Client(api_key=api_key)
+                # Configure the persistent chat with agentic tool parameters
+                config = types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    tools=[
+                        execute_system_command,
+                        write_system_file,
+                        read_system_file,
+                        list_system_directory,
+                        {"google_search": {}}  # Real-time search grounding
+                    ],
+                    temperature=0.7
+                )
+                self.chat = self.gemini_client.chats.create(model='gemini-3.6-flash', config=config)
+                print("Gemini persistent chat session with local agent tools initialized.")
             except Exception as e:
                 print(f"Gemini client error: {e}")
+                self.chat = None
         else:
             print("Gemini API Key missing or google-genai not installed. Running in local rule-based fallback.")
+            self.chat = None
 
     def init_gui(self):
         self.root = tk.Tk()
@@ -439,31 +505,9 @@ class JarvisAssistant:
                 self.toggle_jarvis()
             return
             
-        # State: ACTIVE - check for sleep commands or option selections
-        # Sleep Command
+        # State: ACTIVE - check for sleep commands
         if any(w in text for w in ["dur", "kapan", "uykuya geç", "görüşürüz"]):
             self.sleep_mode()
-            return
-            
-        # Parse numerical selection first if a menu is active
-        if self.active_menu_options:
-            selected_index = self.parse_number(text)
-            if selected_index is not None and 1 <= selected_index <= len(self.active_menu_options):
-                option_name, option_func = self.active_menu_options[selected_index - 1]
-                self.speak(f"{selected_index} numaralı seçenek seçildi: {option_name}")
-                self.active_menu_options = None  # Reset menu
-                # Run the selected action in a thread to keep agent responsive
-                threading.Thread(target=option_func, daemon=True).start()
-                return
-                
-        # Ask for hardware status
-        if any(w in text for w in ["sistem durumu", "donanım durumu", "bilgisayar ne durumda", "reaktör durumu"]):
-            self.report_system_status()
-            return
-
-        # Handle "video/klip düzenleme" project choices specifically (2nd video workflow)
-        if any(w in text for w in ["video", "klip", "düzenle", "edit", "içerik", "paylaş"]):
-            self.show_video_menu()
             return
             
         # General LLM query using Gemini
@@ -472,26 +516,8 @@ class JarvisAssistant:
         self.set_state("ACTIVE")
         self.speak(response)
 
-    def parse_number(self, text):
-        # Maps spoken Turkish digits to integers
-        number_map = {
-            "bir": 1, "1": 1,
-            "iki": 2, "2": 2,
-            "üç": 3, "3": 3,
-            "dör": 4, "4": 4,
-            "beş": 5, "5": 5,
-            "alt": 6, "6": 6,
-            "yed": 7, "7": 7,
-            "sek": 8, "8": 8,
-            "dok": 9, "9": 9
-        }
-        for word, val in number_map.items():
-            if word in text:
-                return val
-        return None
-
     def query_gemini(self, prompt):
-        if not self.gemini_client:
+        if not self.chat:
             return "Gemini API bağlantısı kurulamadı efendim. Lütfen .env dosyasını ve API anahtarınızı kontrol edin."
         
         # Inject system status into context for Jarvis to organically mention
@@ -499,14 +525,7 @@ class JarvisAssistant:
         context_prompt = f"[Sistem Donanım Durumu: {telemetry}]\nKullanıcı İsteği: {prompt}"
         
         try:
-            response = self.gemini_client.models.generate_content(
-                model='gemini-3.6-flash',
-                contents=context_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    max_output_tokens=150,
-                )
-            )
+            response = self.chat.send_message(context_prompt)
             return response.text
         except Exception as e:
             print(f"Gemini generation error: {e}")
@@ -545,34 +564,6 @@ class JarvisAssistant:
             
         self.speak(report)
         self.set_state("ACTIVE")
-
-    def show_video_menu(self):
-        # Define actions for Video Editing & Buffer Scheduling Workflow (2nd video)
-        self.active_menu_options = [
-            ("Ham Videoları Tara ve Kaba Kurgu Yap", self.action_scan_and_cut),
-            ("Dikey Kadraj Dönüştür ve Altyazı Ekle", self.action_subtitles_and_audio),
-            ("Görsel Efektler ve Animasyon Giydir", self.action_effects_overlay),
-            ("Klipleri Buffer ile Yarın Saat 12'ye Zamanla", self.action_buffer_schedule),
-        ]
-        
-        menu_text = "Video kurgu ve yayınlama seçeneklerini listeliyorum efendim. Lütfen işlem numarasını söyleyin: "
-        for i, (name, _) in enumerate(self.active_menu_options, 1):
-            menu_text += f"{i}. {name}. "
-            
-        self.speak(menu_text)
-
-    # Video & Content Actions
-    def action_scan_and_cut(self):
-        self.speak("Ham röportaj klasörü taranıyor. Aksel ve Ahmet'in ham görüntüleri tespit edildi. Kaba kurgu işlemi başlatıldı. Röportajlar kesilip 30'ar saniyelik parçalara bölündü ve birleştirildi efendim.")
-
-    def action_subtitles_and_audio(self):
-        self.speak("Dikey kadraj dönüştürme, altyazı sentezleme ve dip gürültü temizleme işlemleri başlatıldı. Klipler sosyal medya formatına uyarlandı efendim.")
-
-    def action_effects_overlay(self):
-        self.speak("Anlatılan anahtar kelimeler yapay zeka tarafından tespit ediliyor. Metinlere uygun ekran animasyonları ve grafikler kliplere başarıyla giydirildi efendim.")
-
-    def action_buffer_schedule(self):
-        self.speak("Hazırlanan 17 adet kısa klibi yarın öğlen saat 12'ye Buffer takviminize planlıyorum efendim. Paylaşım takvimi güncellendi. For you sir, always.")
 
     def speak(self, text):
         self.speech_queue.put(text)
